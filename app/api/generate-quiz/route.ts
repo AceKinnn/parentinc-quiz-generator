@@ -6,7 +6,9 @@ export const maxDuration = 30
 
 const openrouter = createOpenAI({
   baseURL: 'https://openrouter.ai/api/v1',
-  apiKey: process.env.OPENROUTER_API_KEY || 'MY_API_KEY', 
+  // https://api.groq.com/openai/v1
+  apiKey: process.env.OPENROUTER_API_KEY, 
+  // GROQ_API_KEY
 })
 
 const quizSchema = z.object({
@@ -41,19 +43,41 @@ export async function POST(req: Request) {
       return Response.json({ error: 'A topic is required.' }, { status: 400 })
     }
 
-    const { experimental_output } = await generateText({
-      model: openrouter('openai/gpt-oss-120b:free'), 
-      system:
-        'You are an expert curriculum designer for a parenting technology company. ' +
-        'You write accurate, practical, employee-training quizzes. ' +
-        'Generate exactly 5 multiple-choice questions with exactly 4 options each. ' +
-        'Questions should be clear, factual, and relevant to parenting professionals. ' +
-        'Vary the position of the correct answer across questions. Keep options concise.',
-      prompt: `Create a 5-question multiple-choice quiz about the parenting topic: "${topic}".`,
-      experimental_output: Output.object({ schema: quizSchema }),
-    })
+    let attempt = 0
+    const maxAttempts = 3
+    let quizResult
 
-    return Response.json(experimental_output)
+    // Retry loop to handle random JSON parsing failures from free models
+    while (attempt < maxAttempts) {
+      try {
+        const { experimental_output } = await generateText({
+          model: openrouter('openai/gpt-oss-120b:free'),
+          // model="llama-3.3-70b-versatile"
+          system:
+            'You are an expert curriculum designer for a parenting technology company. ' +
+            'You write accurate, practical, employee-training quizzes. ' +
+            'Generate exactly 5 multiple-choice questions with exactly 4 options each. ' +
+            'Questions should be clear, factual, and relevant to parenting professionals. ' +
+            'Vary the position of the correct answer across questions. Keep options concise.',
+          prompt: `Create a 5-question multiple-choice quiz about the parenting topic: "${topic}".`,
+          experimental_output: Output.object({ schema: quizSchema }),
+        })
+        
+        quizResult = experimental_output
+        break // Success! Exit the loop
+      } catch (err) {
+        attempt++
+        console.log(`[v0] Attempt ${attempt} failed to parse JSON. Retrying...`)
+        
+        // If we've hit the max attempts, throw the error to the outer catch block
+        if (attempt === maxAttempts) {
+          console.log('[v0] All retry attempts failed.')
+          throw err 
+        }
+      }
+    }
+
+    return Response.json(quizResult)
   } catch (error) {
     console.log('[v0] generate-quiz error:', error)
     return Response.json(

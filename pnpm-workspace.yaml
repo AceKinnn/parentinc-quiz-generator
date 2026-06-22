@@ -1,0 +1,5 @@
+allowBuilds:
+  msw: true
+  sharp: true
+minimumReleaseAgeExclude:
+  - '@ai-sdk/openai@3.0.74'
